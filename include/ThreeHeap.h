@@ -10,7 +10,8 @@ public:
 	ThreeHeap(SystemAllocator system_allocator);
 	~ThreeHeap();
 
-	struct AllocationFlags {
+	struct AllocationFlags
+	{
 		static inline constexpr uint8_t flag_from_malloc      = 0b0000'0001;
 		static inline constexpr uint8_t flag_from_new         = 0b0000'0010;
 		static inline constexpr uint8_t flag_new_scalar       = 0b0000'0100;
@@ -36,7 +37,6 @@ public:
 		bool isValloc() const;
 
 		uint8_t allocation_flags;
-
 	};
 
 
@@ -46,7 +46,8 @@ public:
 	int getMaximumNumberOfAllocations();
 	int getMaximumNumberOfBytesAllocated();
 
-	enum class OptionFlags {
+	enum class OptionFlags
+	{
 		PRE_GUARD_BAND_FILL,
 		PRE_GUARD_BAND_VALIDATION,
 		POST_GUARD_BAND_FILL,
@@ -61,14 +62,14 @@ public:
 	void setOptionFlag(OptionFlags flag, bool new_value);
 
     // Interface for C & C++ depending upon the AllocationFlags that get passed in
-	void allocate(int size, int alignment, AllocationFlags flags);
+	void* allocate(int size, int alignment, AllocationFlags flags);
 	void free(void *memory, AllocationFlags flags);
 
     // Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
-	void reallocate(void *memory, int size);
+	void* reallocate(void *memory, int size);
 
 	// Change the ownership of the memory to this caller
-	void own(void *memory);
+	void* own(void *memory);
 
     // Check functions for the heap and memory blocks
 	void checkEverything() const;

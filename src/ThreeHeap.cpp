@@ -17,6 +17,18 @@ const ThreeHeap::AllocationFlags malloc_aligned{ThreeHeap::AllocationFlags::flag
 const ThreeHeap::AllocationFlags malloc_aligned_calloc{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_aligned | ThreeHeap::AllocationFlags::flag_malloc_calloc};
 const ThreeHeap::AllocationFlags malloc_aligned_valloc{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_aligned | ThreeHeap::AllocationFlags::flag_malloc_valloc};
 
+const ThreeHeap::CheckFlags validate_pre_guardband{ThreeHeap::CheckFlags::flag_validate_pre_guardband};
+const ThreeHeap::CheckFlags validate_post_guardband{ThreeHeap::CheckFlags::flag_validate_post_guardband};
+const ThreeHeap::CheckFlags validate_guardbands{ThreeHeap::CheckFlags::flag_validate_pre_guardband | ThreeHeap::CheckFlags::flag_validate_post_guardband};
+const ThreeHeap::CheckFlags validate_free_patterns{ThreeHeap::CheckFlags::flag_validate_free_pattern};
+const ThreeHeap::CheckFlags validate_everything{ ThreeHeap::CheckFlags::flag_validate_pre_guardband | ThreeHeap::CheckFlags::flag_validate_post_guardband | ThreeHeap::CheckFlags::flag_validate_free_pattern};
+
+const ThreeHeap::ConfigureFlags fill_pre_guardband{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband};
+const ThreeHeap::ConfigureFlags fill_post_guardband{ThreeHeap::ConfigureFlags::flag_fill_post_guardband};
+const ThreeHeap::ConfigureFlags fill_guardbands{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband | ThreeHeap::ConfigureFlags::flag_fill_post_guardband};
+const ThreeHeap::ConfigureFlags fill_free_patterns{ThreeHeap::ConfigureFlags::flag_fill_free_pattern};
+const ThreeHeap::ConfigureFlags fill_everything{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband | ThreeHeap::ConfigureFlags::flag_fill_post_guardband | ThreeHeap::ConfigureFlags::flag_fill_free_pattern};
+
 ThreeHeap::ThreeHeap(SystemAllocator system_allocator)
 {
 }

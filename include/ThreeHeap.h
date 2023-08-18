@@ -48,21 +48,44 @@ public:
 
 	struct CheckFlags
 	{
-		// PRE_GUARD_BAND_VALIDATION,
-		// POST_GUARD_BAND_VALIDATION,
-		// FREE_PATTERN_VALIDATION,
+		static inline constexpr uint16_t flag_validate_pre_guardband   = 0b0000'0000'0001;
+		static inline constexpr uint16_t flag_validate_post_guardband  = 0b0000'0000'0010;
+		static inline constexpr uint16_t flag_validate_free_pattern    = 0b0000'0000'0100;
+
+		uint16_t flags;
+
+		static const CheckFlags validate_pre_guardband;
+		static const CheckFlags validate_post_guardband;
+		static const CheckFlags validate_guardbands;
+		static const CheckFlags validate_free_patterns;
+		static const CheckFlags validate_everything;
+
+		bool validatePreGuardBands() const;
+		bool validatePostGuardBands() const;
+		bool validateFreePatterns() const;
 	};
 
 	struct ConfigureFlags : public CheckFlags
 	{
-		// PRE_GUARD_BAND_FILL,
-		// POST_GUARD_BAND_FILL,
-		// FREE_PATTERN_FILL,
-		// INITIALIZE_PATTERN_FILL,
+		static inline constexpr uint16_t flag_fill_pre_guardband    = 0b0000'0001'0000;
+		static inline constexpr uint16_t flag_fill_post_guardband   = 0b0000'0010'0000;
+		static inline constexpr uint16_t flag_fill_free_pattern     = 0b0000'0100'0000;
+		static inline constexpr uint16_t flag_fill_allocate_pattern = 0b0000'1000'0000;
+
+		bool fillPreGuardBands() const;
+		bool fillPostGuardBands() const;
+		bool fillFreePatterns() const;
+		bool fillAllocatePatterns() const;
+
+		static const ConfigureFlags fill_pre_guardband;
+		static const ConfigureFlags fill_post_guardband;
+		static const ConfigureFlags fill_guardbands;
+		static const ConfigureFlags fill_free_patterns;
+		static const ConfigureFlags fill_everything;
 	};
 
-	bool getConfigFlag(ConfigureFlags flag) const;
-	void setConfigFlag(ConfigureFlags flag, bool new_value);
+	bool getConfigureFlag(ConfigureFlags flag) const;
+	void setConfigureFlag(ConfigureFlags flag, bool enabled);
 
     // Interface for C & C++ depending upon the AllocationFlags that get passed in
 	void* allocate(int size, int alignment, AllocationFlags flags);
@@ -78,15 +101,18 @@ public:
 	void checkAllAllocations(CheckFlags flags) const;
 
     // Check this one allocation
-	void checkAllocation(void *memory, CheckFlags flags) const;
+	void checkAllocation(const void *memory, CheckFlags flags) const;
 
 private:
 
 	struct AllocationBlock;
 
 	void checkAllocationBlock(AllocationBlock *block);
+
+private:
 	ConfigureFlags configure_flags;
 
+private:
 	ThreeHeap(const ThreeHeap &) = delete;
 	ThreeHeap& operator=(const ThreeHeap &) = delete;
 	ThreeHeap(ThreeHeap &&) = delete;

@@ -52,30 +52,3 @@ void* ThreeHeap::own(void *memory)
     (void)memory;
     return memory;
 }
-
-// Check functions for the heap and memory blocks
-void ThreeHeap::checkEverything() const
-{
-}
-
-// Check this one allocation
-void ThreeHeap::check(void *memory) const
-{
-    (void)memory;
-}
-
-// check guard bands on this one allocation
-void ThreeHeap::check_guard_bands(void *memory) const
-{
-    (void)memory;
-}
-
-void ThreeHeap::check_pre_guard_band(void *memory) const
-{
-    (void)memory;
-}
-
-void ThreeHeap::check_post_guard_band(void *memory) const
-{
-    (void)memory;
-}

@@ -46,20 +46,23 @@ public:
 	int getMaximumNumberOfAllocations();
 	int getMaximumNumberOfBytesAllocated();
 
-	enum class OptionFlags
+	struct CheckFlags
 	{
-		PRE_GUARD_BAND_FILL,
-		PRE_GUARD_BAND_VALIDATION,
-		POST_GUARD_BAND_FILL,
-		POST_GUARD_BAND_VALIDATION,
-		INITIALIZE_PATTERN_FILL,
-		FREE_PATTERN_FILL,
-		FREE_PATTERN_VALIDATION,
-		total_count
+		// PRE_GUARD_BAND_VALIDATION,
+		// POST_GUARD_BAND_VALIDATION,
+		// FREE_PATTERN_VALIDATION,
 	};
 
-	bool getOptionFlag(OptionFlags flag) const;
-	void setOptionFlag(OptionFlags flag, bool new_value);
+	struct ConfigureFlags : public CheckFlags
+	{
+		// PRE_GUARD_BAND_FILL,
+		// POST_GUARD_BAND_FILL,
+		// FREE_PATTERN_FILL,
+		// INITIALIZE_PATTERN_FILL,
+	};
+
+	bool getConfigFlag(ConfigureFlags flag) const;
+	void setConfigFlag(ConfigureFlags flag, bool new_value);
 
     // Interface for C & C++ depending upon the AllocationFlags that get passed in
 	void* allocate(int size, int alignment, AllocationFlags flags);
@@ -72,20 +75,17 @@ public:
 	void* own(void *memory);
 
     // Check functions for the heap and memory blocks
-	void checkEverything() const;
+	void checkAllAllocations(CheckFlags flags) const;
 
     // Check this one allocation
-	void check(void *memory) const;
-
-	// check guard bands on this one allocation
-	void check_guard_bands(void *memory) const;
-	void check_pre_guard_band(void *memory) const;
-	void check_post_guard_band(void *memory) const;
+	void checkAllocation(void *memory, CheckFlags flags) const;
 
 private:
 
-	void check_free_pattern(void *memory);
-	bool option_flag_values[static_cast<int>(OptionFlags::total_count)];
+	struct AllocationBlock;
+
+	void checkAllocationBlock(AllocationBlock *block);
+	ConfigureFlags configure_flags;
 
 	ThreeHeap(const ThreeHeap &) = delete;
 	ThreeHeap& operator=(const ThreeHeap &) = delete;
@@ -100,6 +100,3 @@ inline bool ThreeHeap::AllocationFlags::isArray() const { return (allocation_fla
 inline bool ThreeHeap::AllocationFlags::isAligned() const { return (allocation_flags & flag_malloc_aligned) != 0; }
 inline bool ThreeHeap::AllocationFlags::isCalloc() const { return (allocation_flags & flag_malloc_calloc) != 0; }
 inline bool ThreeHeap::AllocationFlags::isValloc() const { return (allocation_flags & flag_malloc_valloc) != 0; }
-
-inline bool ThreeHeap::getOptionFlag(OptionFlags flag) const { return option_flag_values[static_cast<int>(flag)]; }
-inline void ThreeHeap::setOptionFlag(OptionFlags flag, bool new_value) { option_flag_values[static_cast<int>(flag)] = new_value; }

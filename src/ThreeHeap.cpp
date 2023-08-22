@@ -9,27 +9,28 @@
 #define USE_FREE_PATTERN_FILL            0
 #define USE_FREE_PATTERN_VALIDATION      0
 
-const ThreeHeap::AllocationFlags malloc{ThreeHeap::AllocationFlags::flag_from_malloc};
-const ThreeHeap::AllocationFlags new_scalar{ThreeHeap::AllocationFlags::flag_from_new | ThreeHeap::AllocationFlags::flag_new_scalar};
-const ThreeHeap::AllocationFlags new_array{ThreeHeap::AllocationFlags::flag_from_new | ThreeHeap::AllocationFlags::flag_new_array};
-const ThreeHeap::AllocationFlags malloc_calloc{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_calloc};
-const ThreeHeap::AllocationFlags malloc_aligned{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_aligned};
-const ThreeHeap::AllocationFlags malloc_aligned_calloc{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_aligned | ThreeHeap::AllocationFlags::flag_malloc_calloc};
-const ThreeHeap::AllocationFlags malloc_aligned_valloc{ThreeHeap::AllocationFlags::flag_from_malloc | ThreeHeap::AllocationFlags::flag_malloc_aligned | ThreeHeap::AllocationFlags::flag_malloc_valloc};
+THREEHEAP_DEFINE_FLAGS1(malloc, flag_from_malloc);
+THREEHEAP_DEFINE_FLAGS2(malloc_calloc, flag_from_malloc, flag_malloc_calloc);
+THREEHEAP_DEFINE_FLAGS2(malloc_aligned, flag_from_malloc, flag_malloc_aligned);
+THREEHEAP_DEFINE_FLAGS2(malloc_aligned_calloc, flag_from_malloc, flag_malloc_calloc);
+THREEHEAP_DEFINE_FLAGS2(malloc_aligned_valloc, flag_from_malloc, flag_malloc_valloc);
+THREEHEAP_DEFINE_FLAGS2(new_scalar, flag_from_new, flag_new_scalar);
+THREEHEAP_DEFINE_FLAGS2(new_array, flag_from_new, flag_new_array);
 
-const ThreeHeap::CheckFlags validate_pre_guardband{ThreeHeap::CheckFlags::flag_validate_pre_guardband};
-const ThreeHeap::CheckFlags validate_post_guardband{ThreeHeap::CheckFlags::flag_validate_post_guardband};
-const ThreeHeap::CheckFlags validate_guardbands{ThreeHeap::CheckFlags::flag_validate_pre_guardband | ThreeHeap::CheckFlags::flag_validate_post_guardband};
-const ThreeHeap::CheckFlags validate_free_patterns{ThreeHeap::CheckFlags::flag_validate_free_pattern};
-const ThreeHeap::CheckFlags validate_everything{ ThreeHeap::CheckFlags::flag_validate_pre_guardband | ThreeHeap::CheckFlags::flag_validate_post_guardband | ThreeHeap::CheckFlags::flag_validate_free_pattern};
+THREEHEAP_DEFINE_FLAGS1(validate_pre_guardband, flag_validate_pre_guardband);
+THREEHEAP_DEFINE_FLAGS1(validate_post_guardband, flag_validate_post_guardband);
+THREEHEAP_DEFINE_FLAGS2(validate_guardbands,flag_validate_pre_guardband, flag_validate_post_guardband);
+THREEHEAP_DEFINE_FLAGS1(validate_free_patterns, flag_validate_free_pattern);
+THREEHEAP_DEFINE_FLAGS3(validate_everything, flag_validate_pre_guardband, flag_validate_post_guardband, flag_validate_free_pattern);
 
-const ThreeHeap::ConfigureFlags fill_pre_guardband{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband};
-const ThreeHeap::ConfigureFlags fill_post_guardband{ThreeHeap::ConfigureFlags::flag_fill_post_guardband};
-const ThreeHeap::ConfigureFlags fill_guardbands{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband | ThreeHeap::ConfigureFlags::flag_fill_post_guardband};
-const ThreeHeap::ConfigureFlags fill_free_patterns{ThreeHeap::ConfigureFlags::flag_fill_free_pattern};
-const ThreeHeap::ConfigureFlags fill_everything{ThreeHeap::ConfigureFlags::flag_fill_pre_guardband | ThreeHeap::ConfigureFlags::flag_fill_post_guardband | ThreeHeap::ConfigureFlags::flag_fill_free_pattern};
+THREEHEAP_DEFINE_FLAGS1(fill_pre_guardband, flag_fill_pre_guardband);
+THREEHEAP_DEFINE_FLAGS1(fill_post_guardband, flag_fill_post_guardband);
+THREEHEAP_DEFINE_FLAGS2(fill_guardbands, flag_fill_pre_guardband, flag_fill_post_guardband);
+THREEHEAP_DEFINE_FLAGS1(fill_free_patterns, flag_fill_free_pattern);
+THREEHEAP_DEFINE_FLAGS3(fill_everything, flag_fill_pre_guardband, flag_fill_post_guardband, flag_fill_free_pattern);
 
-ThreeHeap::ThreeHeap(SystemAllocator system_allocator)
+ThreeHeap::ThreeHeap(ExternalInterface&& ei, Flags flags)
+: external_interface(ei), configure_flags(flags)
 {
 }
 
@@ -37,14 +38,14 @@ ThreeHeap::~ThreeHeap()
 {
 }
 
-void* ThreeHeap::allocate(int size, int alignment, AllocationFlags flags)
+void* ThreeHeap::allocate(int size, int alignment, Flags flags)
 {
     (void)size;
     (void)alignment;
     (void)flags;
     return nullptr;
 }
-void ThreeHeap::free(void *memory, AllocationFlags flags)
+void ThreeHeap::free(void *memory, Flags flags)
 {
     (void)memory;
     (void)flags;

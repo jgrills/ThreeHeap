@@ -1,44 +1,43 @@
 #include <stdint.h>
 
+#define THREEHEAP_DEFINE_FLAG(flag_name, flag_bit, function_name) \
+		static inline constexpr uint32_t flag_name  = flag_bit; \
+		inline bool function_name() const { return (flag_name & flags) != 0; }
+
+#define THREEHEAP_DECLARE_FLAGS(flags_name) \
+		static const ThreeHeap::Flags flags_name
+
+#define THREEHEAP_DEFINE_FLAGS1(flags_name, flags0) \
+		const ThreeHeap::Flags flags_name{ThreeHeap::Flags::flags0}
+
+#define THREEHEAP_DEFINE_FLAGS2(flags_name, flags0, flags1) \
+		const ThreeHeap::Flags flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1}
+
+#define THREEHEAP_DEFINE_FLAGS3(flags_name, flags0, flags1, flags2) \
+		const ThreeHeap::Flags flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1 | ThreeHeap::Flags::flags2}
+
+#define THREEHEAP_DEFINE_FLAGS4(flags_name, flags0, flags1, flags2, flags3) \
+		const ThreeHeap::Flags flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1 | ThreeHeap::Flags::flags2 | ThreeHeap::Flags::flags3}
+
 class ThreeHeap
 {
 public:
 
-	// Function call interface to get a new block of system memory
-	typedef void* (*SystemAllocator)(int size);
-
-	ThreeHeap(SystemAllocator system_allocator);
-	~ThreeHeap();
-
-	struct AllocationFlags
+	struct Flags;
+	struct ExternalInterface
 	{
-		static inline constexpr uint8_t flag_from_malloc      = 0b0000'0001;
-		static inline constexpr uint8_t flag_from_new         = 0b0000'0010;
-		static inline constexpr uint8_t flag_new_scalar       = 0b0000'0100;
-		static inline constexpr uint8_t flag_new_array        = 0b0000'1000;
-		static inline constexpr uint8_t flag_malloc_aligned   = 0b0001'0000;
-		static inline constexpr uint8_t flag_malloc_calloc    = 0b0010'0000;
-		static inline constexpr uint8_t flag_malloc_valloc    = 0b0100'0000;
+		struct HeapError
+		{
+			// @todo what data should we report?
+		};
 
-		static const AllocationFlags malloc;
-		static const AllocationFlags new_scalar;
-		static const AllocationFlags new_array;
-		static const AllocationFlags malloc_calloc;
-		static const AllocationFlags malloc_aligned;
-		static const AllocationFlags malloc_aligned_calloc;
-		static const AllocationFlags malloc_aligned_valloc;
-
-		bool isMalloc() const;
-		bool isNew() const;
-		bool isScalar() const;
-		bool isArray() const;
-		bool isAligned() const;
-		bool isCalloc() const;
-		bool isValloc() const;
-
-		uint8_t allocation_flags;
+		void* (*page_allocator)(int size);
+		void (*report)(const void *ptr, int size, int alignment, Flags flags);
+		void (*heap_error)(HeapError &heap_error);
 	};
 
+	ThreeHeap(ExternalInterface&& external_interface, Flags enabled);
+	~ThreeHeap();
 
 	int getTotalNumberOfAllocations();
 	int getCurrentNumberOfAllocations();
@@ -46,62 +45,69 @@ public:
 	int getMaximumNumberOfAllocations();
 	int getMaximumNumberOfBytesAllocated();
 
-	struct CheckFlags
-	{
-		static inline constexpr uint16_t flag_validate_pre_guardband   = 0b0000'0000'0001;
-		static inline constexpr uint16_t flag_validate_post_guardband  = 0b0000'0000'0010;
-		static inline constexpr uint16_t flag_validate_free_pattern    = 0b0000'0000'0100;
+	bool getConfigureFlag(Flags flag) const;
+	void setConfigureFlag(Flags flag, bool enabled);
 
-		uint16_t flags;
+	// Interface for C & C++ depending upon the AllocationFlags that get passed in
+	void* allocate(int size, int alignment, Flags flags);
+	void free(void *memory, Flags flags);
 
-		static const CheckFlags validate_pre_guardband;
-		static const CheckFlags validate_post_guardband;
-		static const CheckFlags validate_guardbands;
-		static const CheckFlags validate_free_patterns;
-		static const CheckFlags validate_everything;
-
-		bool validatePreGuardBands() const;
-		bool validatePostGuardBands() const;
-		bool validateFreePatterns() const;
-	};
-
-	struct ConfigureFlags : public CheckFlags
-	{
-		static inline constexpr uint16_t flag_fill_pre_guardband    = 0b0000'0001'0000;
-		static inline constexpr uint16_t flag_fill_post_guardband   = 0b0000'0010'0000;
-		static inline constexpr uint16_t flag_fill_free_pattern     = 0b0000'0100'0000;
-		static inline constexpr uint16_t flag_fill_allocate_pattern = 0b0000'1000'0000;
-
-		bool fillPreGuardBands() const;
-		bool fillPostGuardBands() const;
-		bool fillFreePatterns() const;
-		bool fillAllocatePatterns() const;
-
-		static const ConfigureFlags fill_pre_guardband;
-		static const ConfigureFlags fill_post_guardband;
-		static const ConfigureFlags fill_guardbands;
-		static const ConfigureFlags fill_free_patterns;
-		static const ConfigureFlags fill_everything;
-	};
-
-	bool getConfigureFlag(ConfigureFlags flag) const;
-	void setConfigureFlag(ConfigureFlags flag, bool enabled);
-
-    // Interface for C & C++ depending upon the AllocationFlags that get passed in
-	void* allocate(int size, int alignment, AllocationFlags flags);
-	void free(void *memory, AllocationFlags flags);
-
-    // Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
+	// Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
 	void* reallocate(void *memory, int size);
 
 	// Change the ownership of the memory to this caller
 	void* own(void *memory);
 
-    // Check functions for the heap and memory blocks
-	void checkAllAllocations(CheckFlags flags) const;
+	// Check functions for the heap and memory blocks
+	void checkAllAllocations(Flags flags) const;
 
-    // Check this one allocation
-	void checkAllocation(const void *memory, CheckFlags flags) const;
+	// Check this one allocation
+	void checkAllocation(const void *memory, Flags flags) const;
+
+	struct Flags
+	{
+		THREEHEAP_DEFINE_FLAG(flag_from_new,                0b0000'0000'0000'0000'0001, isNew);
+		THREEHEAP_DEFINE_FLAG(flag_new_scalar,              0b0000'0000'0000'0000'0010, isNewScalar);
+		THREEHEAP_DEFINE_FLAG(flag_new_array,               0b0000'0000'0000'0000'0100, isNewArray);
+		THREEHEAP_DEFINE_FLAG(flag_from_malloc,             0b0000'0000'0000'0001'0000, isMalloc);
+		THREEHEAP_DEFINE_FLAG(flag_malloc_aligned,          0b0000'0000'0000'0010'0000, isMallocAligned);
+		THREEHEAP_DEFINE_FLAG(flag_malloc_calloc,           0b0000'0000'0000'0100'0010, IsMallocCalloc);
+		THREEHEAP_DEFINE_FLAG(flag_malloc_valloc,           0b0000'0000'0000'1000'0010, isMallocValloc);
+
+		THREEHEAP_DEFINE_FLAG(flag_report_allocate,         0b0000'0000'0001'0000'0000, isAllocate);
+		THREEHEAP_DEFINE_FLAG(flag_report_free,	            0b0000'0000'0010'0000'0000, isFree);
+
+		THREEHEAP_DEFINE_FLAG(flag_validate_pre_guardband,  0b0000'0001'0000'0000'0000, validatePreGuardBand);
+		THREEHEAP_DEFINE_FLAG(flag_validate_post_guardband, 0b0000'0010'0000'0000'0000, validatePostGuardBand);
+		THREEHEAP_DEFINE_FLAG(flag_validate_free_pattern,   0b0000'0100'0000'0000'0000, validateFreePattern);
+
+		THREEHEAP_DEFINE_FLAG(flag_fill_pre_guardband,      0b0001'0000'0000'0000'0000, fillPreGuardBand);
+		THREEHEAP_DEFINE_FLAG(flag_fill_post_guardband,     0b0010'0000'0000'0000'0000, fillPostGuardBand);
+		THREEHEAP_DEFINE_FLAG(flag_fill_free_pattern,       0b0100'0000'0000'0000'0000, fillFreePattern);
+		THREEHEAP_DEFINE_FLAG(flag_fill_allocate_pattern,   0b1000'0000'0000'0000'0000, fillAllocatePatten);
+
+		uint32_t flags;
+	};
+
+	THREEHEAP_DECLARE_FLAGS(malloc);
+	THREEHEAP_DECLARE_FLAGS(new_scalar);
+	THREEHEAP_DECLARE_FLAGS(new_array);
+	THREEHEAP_DECLARE_FLAGS(malloc_calloc);
+	THREEHEAP_DECLARE_FLAGS(malloc_aligned);
+	THREEHEAP_DECLARE_FLAGS(malloc_aligned_calloc);
+	THREEHEAP_DECLARE_FLAGS(malloc_aligned_valloc);
+
+	THREEHEAP_DECLARE_FLAGS(validate_pre_guardband);
+	THREEHEAP_DECLARE_FLAGS(validate_post_guardband);
+	THREEHEAP_DECLARE_FLAGS(validate_guardbands);
+	THREEHEAP_DECLARE_FLAGS(validate_free_patterns);
+	THREEHEAP_DECLARE_FLAGS(validate_everything);
+
+	THREEHEAP_DECLARE_FLAGS(fill_pre_guardband);
+	THREEHEAP_DECLARE_FLAGS(fill_post_guardband);
+	THREEHEAP_DECLARE_FLAGS(fill_guardbands);
+	THREEHEAP_DECLARE_FLAGS(fill_free_patterns);
+	THREEHEAP_DECLARE_FLAGS(fill_everything);
 
 private:
 
@@ -110,7 +116,8 @@ private:
 	void checkAllocationBlock(AllocationBlock *block);
 
 private:
-	ConfigureFlags configure_flags;
+	ExternalInterface external_interface;
+	Flags configure_flags;
 
 private:
 	ThreeHeap(const ThreeHeap &) = delete;
@@ -118,11 +125,3 @@ private:
 	ThreeHeap(ThreeHeap &&) = delete;
 	ThreeHeap& operator=(ThreeHeap &&) = delete;
 };
-
-inline bool ThreeHeap::AllocationFlags::isMalloc() const { return (allocation_flags & flag_from_malloc) != 0; }
-inline bool ThreeHeap::AllocationFlags::isNew() const { return (allocation_flags & flag_from_new) != 0; }
-inline bool ThreeHeap::AllocationFlags::isScalar() const { return (allocation_flags & flag_new_scalar) != 0; }
-inline bool ThreeHeap::AllocationFlags::isArray() const { return (allocation_flags & flag_new_array) != 0; }
-inline bool ThreeHeap::AllocationFlags::isAligned() const { return (allocation_flags & flag_malloc_aligned) != 0; }
-inline bool ThreeHeap::AllocationFlags::isCalloc() const { return (allocation_flags & flag_malloc_calloc) != 0; }
-inline bool ThreeHeap::AllocationFlags::isValloc() const { return (allocation_flags & flag_malloc_valloc) != 0; }

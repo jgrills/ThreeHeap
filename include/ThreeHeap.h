@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 
 #define THREEHEAP_DEFINE_FLAG(flag_name, flag_bit, function_name) \
@@ -31,29 +32,37 @@ public:
 			// @todo what data should we report?
 		};
 
-		void* (*page_allocator)(int size);
-		void (*report)(const void *ptr, int size, int alignment, Flags flags);
-		void (*heap_error)(HeapError &heap_error);
+		virtual void* page_allocator(int64_t size) = 0;
+		virtual void report(const void *ptr, int64_t size, int alignment, Flags flags) = 0;
+		virtual void heap_error(HeapError &heap_error) = 0;
+	};
+	struct DefaultInterface : public ExternalInterface
+	{
+		void * page_allocator(int64_t size) override;
+		void report(const void * ptr, int64_t size, int alignment, Flags flags) override;
+		void heap_error(HeapError & heap_error) override;
 	};
 
-	ThreeHeap(ExternalInterface&& external_interface, Flags enabled);
+	ThreeHeap(ExternalInterface& external_interface, Flags enabled);
 	~ThreeHeap();
 
 	int getTotalNumberOfAllocations();
 	int getCurrentNumberOfAllocations();
-	int getCurrentNumberOfBytesAllocated();
 	int getMaximumNumberOfAllocations();
-	int getMaximumNumberOfBytesAllocated();
+
+	int64_t getTotalNUmberOfBytesAllocated();
+	int64_t getCurrentNumberOfBytesAllocated();
+	int64_t getMaximumNumberOfBytesAllocated();
 
 	bool getConfigureFlag(Flags flag) const;
 	void setConfigureFlag(Flags flag, bool enabled);
 
 	// Interface for C & C++ depending upon the AllocationFlags that get passed in
-	void* allocate(int size, int alignment, Flags flags);
-	void free(void *memory, Flags flags);
+	void* allocate(int64_t size, int alignment /* , Flags flags */);
+	void free(void *memory /* , Flags flags */);
 
 	// Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
-	void* reallocate(void *memory, int size);
+	void* reallocate(void *memory, int64_t size);
 
 	// Change the ownership of the memory to this caller
 	void* own(void *memory);
@@ -116,10 +125,45 @@ private:
 	void checkAllocationBlock(AllocationBlock *block);
 
 private:
-	ExternalInterface external_interface;
+	ExternalInterface& external_interface;
 	Flags configure_flags;
 
 private:
+	constexpr static size_t Alignment = 64;
+	constexpr static size_t AllocationPad = Alignment;
+	constexpr static size_t HeaderSize = Alignment;
+	constexpr static size_t SplitSize = Alignment * 2;
+
+	// Alignment needs to be a power of 2
+	static_assert((Alignment & (Alignment-1)) == 0);
+
+	struct Block;
+	struct FreeBlock;
+	struct AllocatedBlock;
+	struct SentinelBlock;
+
+	enum class BlockStatus : int32_t
+	{
+		Unknown,
+		Free,
+		Allocated,
+		Sentinel
+	};
+
+private:
+
+	void check_free_pattern(void *memory);
+	// bool option_flag_values[static_cast<int>(OptionFlags::total_count)];
+
+	void assert(bool everything_is_okay);
+	void removeFromFreeList(FreeBlock *block);
+	void addToFreeList(FreeBlock *block);
+	FreeBlock *searchFreeList(int64_t size);
+
+private:
+
+	FreeBlock *free_list = nullptr;
+
 	ThreeHeap(const ThreeHeap &) = delete;
 	ThreeHeap& operator=(const ThreeHeap &) = delete;
 	ThreeHeap(ThreeHeap &&) = delete;

@@ -25,13 +25,12 @@ class ThreeHeap
 public:
 
 	struct Flags;
+	struct HeapError
+	{
+		// @todo what data should we report?
+	};
 	struct ExternalInterface
 	{
-		struct HeapError
-		{
-			// @todo what data should we report?
-		};
-
 		virtual void* page_allocator(int64_t size) = 0;
 		virtual void report(const void *ptr, int64_t size, int alignment, Flags flags) = 0;
 		virtual void heap_error(HeapError &heap_error) = 0;
@@ -46,20 +45,24 @@ public:
 	ThreeHeap(ExternalInterface& external_interface, Flags enabled);
 	~ThreeHeap();
 
-	int getTotalNumberOfAllocations();
-	int getCurrentNumberOfAllocations();
-	int getMaximumNumberOfAllocations();
+	int getTotalNumberOfAllocations() const;
+	int getCurrentNumberOfAllocations() const;
+	int getMaximumNumberOfAllocations() const;
 
-	int64_t getTotalNUmberOfBytesAllocated();
-	int64_t getCurrentNumberOfBytesAllocated();
-	int64_t getMaximumNumberOfBytesAllocated();
+	int64_t getTotalNUmberOfBytesAllocated() const;
+	int64_t getCurrentNumberOfBytesAllocated() const;
+	int64_t getMaximumNumberOfBytesAllocated() const;
 
 	bool getConfigureFlag(Flags flag) const;
 	void setConfigureFlag(Flags flag, bool enabled);
 
 	// Interface for C & C++ depending upon the AllocationFlags that get passed in
 	void* allocate(int64_t size, int alignment /* , Flags flags */);
-	void free(void *memory /* , Flags flags */);
+	void free(void * memory /* , Flags flags */);
+
+	int64_t getAllocationSize(void * memory) const;
+
+	void verify() const;
 
 	// Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
 	void* reallocate(void *memory, int64_t size);
@@ -142,7 +145,7 @@ private:
 	struct AllocatedBlock;
 	struct SentinelBlock;
 
-	enum class BlockStatus : int32_t
+	enum class BlockStatus : int16_t
 	{
 		Unknown,
 		Free,
@@ -150,12 +153,23 @@ private:
 		Sentinel
 	};
 
+	struct SystemAllocation
+	{
+		SentinelBlock * start = nullptr;
+		SentinelBlock * end = nullptr;
+		SystemAllocation * next = nullptr;
+	};
+
 private:
 
 	void check_free_pattern(void *memory);
 	// bool option_flag_values[static_cast<int>(OptionFlags::total_count)];
 
-	void assert(bool everything_is_okay);
+	void verify(FreeBlock const *parent, FreeBlock const *node) const;
+	void assertHandler(const char * const file, int line, const char * const text, const bool everything_is_okay) const;
+
+	void allocateFromSystem();
+
 	void removeFromFreeList(FreeBlock *block);
 	void addToFreeList(FreeBlock *block);
 	FreeBlock *searchFreeList(int64_t size);
@@ -163,6 +177,12 @@ private:
 private:
 
 	FreeBlock *free_list = nullptr;
+	SystemAllocation * first_system_allocation = nullptr;
+	SystemAllocation * last_system_allocation = nullptr;
+	mutable int16_t verification_stamp = 0;
+	mutable int free_tree = 0;
+
+private:
 
 	ThreeHeap(const ThreeHeap &) = delete;
 	ThreeHeap& operator=(const ThreeHeap &) = delete;

@@ -99,14 +99,14 @@ public:
 	struct ExternalInterface
 	{
 		virtual void * system_allocator(int64_t size) = 0;
-		virtual void report(const void * ptr, int64_t size, int alignment, Flags flags) = 0;
+		virtual void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) = 0;
 		virtual void error(ErrorInfo const & info) = 0;
 		virtual void terminate() = 0;
 	};
 	struct DefaultInterface : public ExternalInterface
 	{
 		void * system_allocator(int64_t size) override;
-		void report(const void * ptr, int64_t size, int alignment, Flags flags) override;
+		void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) override;
 		void error(ErrorInfo const & info) override;
 		void terminate() override;
 	};
@@ -126,7 +126,7 @@ public:
 	// void setConfigureFlag(Flags flag, bool enabled);
 
 	// Interface for C & C++ depending upon the AllocationFlags that get passed in
-	void * allocate(int64_t size, int alignment, Flags flags);
+	void * allocate(int64_t size, int alignment, Flags flags, void const * owner=nullptr);
 	void free(void * memory, Flags flags);
 
 	// Reallocate only supports malloc, no alignment, no valloc, no clearing allowed on these blocks
@@ -159,7 +159,7 @@ private:
 private:
 
 	void * system_allocator(int64_t size) const;
-	void report(const void * ptr, int64_t size, int alignment, Flags flags) const;
+	void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) const;
 	void error(ErrorInfo const & info) const;
 
 	void allocateFromSystem();
@@ -192,9 +192,9 @@ inline void * ThreeHeap::system_allocator(int64_t const size) const
 	return external_interface.system_allocator(size);
 }
 
-inline void ThreeHeap::report(void const * const ptr, int64_t const size, int const alignment, Flags const flags) const
+inline void ThreeHeap::report(void const * const ptr, int64_t const size, int const alignment, void const * const owner, Flags const flags) const
 {
-	external_interface.report(ptr, size, alignment, flags);
+	external_interface.report(ptr, size, alignment, owner, flags);
 }
 
 inline void ThreeHeap::error(ErrorInfo const & info) const

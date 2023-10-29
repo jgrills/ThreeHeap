@@ -2,6 +2,15 @@
 
 #include <ThreeHeap.h>
 
+class HeapInterface : public ThreeHeap::DefaultInterface
+{
+public:
+	void report(const void * ptr, int64_t size, int alignment, const void * owner, ThreeHeap::Flags flags) override;
+	void terminate() override;
+
+	bool permissive = false;
+	bool report_operations = false;
+};
+
+extern HeapInterface g_heapInterface;
 extern ThreeHeap g_heap;
-extern bool g_heap_report_operations;
-extern bool g_heap_permissive;

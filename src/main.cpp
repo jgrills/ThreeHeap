@@ -19,9 +19,11 @@ int main()
 {
 	srand(0);
 
-	// test new & delete
-	delete new int;
-	delete[] new int[10];
+#if USE_THREEHEAP
+	printf("threeheap\n");
+#else
+	printf("malloc/free\n");
+#endif
 
 	empty.reserve(number_of_allocations);
 	full.reserve(number_of_allocations);
@@ -30,7 +32,7 @@ int main()
 
 	constexpr bool verify = false;
 
-	int constexpr loop_count = 100'000;
+	int constexpr loop_count = 100'000'000;
 	for (int loops = 0; loops < loop_count; ++loops)
 	{
 		assert(full.size() + empty.size() == number_of_allocations);
@@ -44,14 +46,12 @@ int main()
 				empty.pop_back();
 				int const size = rand() % (64 * 1024);
 #if USE_THREEHEAP == 1
-				void * result = g_heap.allocate(size, 0, ThreeHeap::malloc);
+				void * result = operator new(size);
 #else
 				void * result = malloc(size);
 #endif
-
 				pointer[slot] = result;
 				full.push_back(slot);
-				// printf("%6d alloc[%4d] (%8d) %8p\n", loops, slot, (int)size, result);
 
 				// Verify the heap after every operation
 				if constexpr (verify)
@@ -69,10 +69,8 @@ int main()
 				void * const p = pointer[slot];
 				pointer[slot] = nullptr;
 				empty.push_back(slot);
-				// int64_t const size = heap.getAllocationSize(p);
-				// printf("%6d free [%4d] (%8d) %8p\n", loops, slot, (int)size, p);
 #if USE_THREEHEAP == 1
-				g_heap.free(p, ThreeHeap::malloc);
+				operator delete(p);
 #else
 				free(p);
 #endif
@@ -85,6 +83,10 @@ int main()
 	}
 
 #if 0
+	// test new & delete
+	delete new int;
+	delete[] new int[10];
+
 	// These should be error cases
 	g_heap_permissive = true;
 	delete[] new char;
@@ -93,8 +95,9 @@ int main()
 	g_heap.free(new int[10], ThreeHeap::malloc);
 	delete static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
 	delete[] static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
-#endif
 
+	// Print memory leaks
 	printf("memory leaks:\n");
 	g_heap.report_allocations();
+#endif
 }

@@ -17,8 +17,8 @@
 #define USE_FREE_PATTERN_FILL            0
 #define USE_FREE_PATTERN_VALIDATION      0
 
-#define USE_ASSERT                       1
-#define USE_REPORT                       1
+#define USE_ASSERT                       0
+#define USE_REPORT                       0
 
 #if USE_ASSERT
 #define assert(a) \
@@ -193,7 +193,8 @@ struct ThreeHeap::FreeBlock : public ThreeHeap::Block
 struct ThreeHeap::AllocatedBlock : public ThreeHeap::Block
 {
 	/* 8 */ int64_t allocation_size = 0;
-	/* 4 */ Flags flags;
+	/* 8 */ void const * owner = nullptr;
+	/* 4 */ Flags flags = zero;
 };
 
 struct ThreeHeap::SentinelBlock : public ThreeHeap::Block
@@ -208,18 +209,24 @@ void * ThreeHeap::DefaultInterface::system_allocator(int64_t const size)
 	return ::malloc(size);
 }
 
-void ThreeHeap::DefaultInterface::report(void const * const ptr, int64_t const size, int const alignment, Flags const flags)
+void ThreeHeap::DefaultInterface::report(void const * const ptr, int64_t const size, int const alignment, void const * const owner, Flags const flags)
 {
 #if USE_REPORT
 	if (flags.isAllocate())
 	{
-		printf("alloc(%d @ %d) %p %08x\n", (int)size, alignment, ptr, flags.flags);
+		printf("op=alloc result=%p size=%d align=%d owner=%p flags=%x\n", ptr, (int)size, alignment, owner, flags.flags);
 	}
 	else
 	{
 		assert(flags.isFree());
-		printf("free(%p) %d %08x\n", ptr, (int)size, flags.flags);
+		printf("op=free ptr=%p size=%d owner=%p flags=%x\n", ptr, (int)size, owner, flags.flags);
 	}
+#else
+	(void)ptr;
+	(void)size;
+	(void)alignment;
+	(void)owner;
+	(void)flags;
 #endif
 }
 
@@ -525,7 +532,7 @@ ThreeHeap::FreeBlock * ThreeHeap::searchFreeList(const int64_t size)
 	return best_fit;
 }
 
-void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const flags)
+void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const flags, void const * const owner)
 {
 	// calculate the total size of the allocation block
 	const int64_t padding = (AllocationPad - (size & (AllocationPad - 1))) & (AllocationPad - 1);
@@ -552,6 +559,7 @@ void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const 
 	allocated_block->status = BlockStatus::Allocated;
 	allocated_block->allocation_size = size;
 	allocated_block->flags = flags;
+	allocated_block->owner = owner;
 	free_block = nullptr;
 
 	// Check if there's sufficient size left over to split this block
@@ -583,7 +591,7 @@ void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const 
 	// Return a pointer to the client memory
 	void * const result = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
 
-	report(result, size, alignment, flags | report_allocation_operation);
+	report(result, size, alignment, owner, flags | report_allocation_operation);
 	return result;
 }
 
@@ -614,7 +622,7 @@ void ThreeHeap::free(void * const memory, Flags const flags)
 		return;
 	}
 
-	report(memory, allocated_block->allocation_size, 0, allocated_block->flags | report_free_operation);
+	report(memory, allocated_block->allocation_size, 0, allocated_block->owner, allocated_block->flags | report_free_operation);
 
 	// Convert this previously allocated block to a free block
 	FreeBlock * free_block = static_cast<FreeBlock *>(static_cast<Block *>(allocated_block));
@@ -780,7 +788,7 @@ void ThreeHeap::report_allocations() const
 			{
 				AllocatedBlock const * const allocated_block = static_cast<AllocatedBlock const *>(block);
 				void const * const mem = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
-				report(mem, allocated_block->allocation_size, 0, allocated_block->flags | report_allocation);
+				report(mem, allocated_block->allocation_size, 0, allocated_block->owner, allocated_block->flags | report_allocation);
 			}
 		}
 	}

@@ -2,8 +2,11 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <new>
+
+// ======================================================================
 
 // CPP defines that control the code compilation for these features,
 // this should be kept private in this one translation unit
@@ -14,14 +17,57 @@
 #define USE_FREE_PATTERN_FILL            0
 #define USE_FREE_PATTERN_VALIDATION      0
 
-#if 0
+#define USE_ASSERT                       1
+#define USE_REPORT                       1
+
+#if USE_ASSERT
+#define assert(a) \
+do \
+{ \
+	const bool result = (a); \
+	if (!result) \
+	{ \
+		ErrorInfo info; \
+		info.type = ErrorInfo::Type::Assert; \
+		info.assert = #a; \
+		info.file = __FILE__; \
+		info.line = __LINE__; \
+		error(info); \
+	} \
+} while (false)
+#else
+#define assert(a) static_cast<void>(0)
+#endif
+
+#if USE_REPORT
+#define REPORT(...) report(__VA_ARGS__)
+#else
+#define REPORT(...) static_cast<void>(0)
+#endif
+
+#define THREEHEAP_DEFINE_FLAGS1(flags_name, flags0) \
+	const ThreeHeap::Flags ThreeHeap::flags_name{ThreeHeap::Flags::flags0}
+
+#define THREEHEAP_DEFINE_FLAGS2(flags_name, flags0, flags1) \
+	const ThreeHeap::Flags ThreeHeap::flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1}
+
+#define THREEHEAP_DEFINE_FLAGS3(flags_name, flags0, flags1, flags2) \
+	const ThreeHeap::Flags ThreeHeap::flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1 | ThreeHeap::Flags::flags2}
+
+#define THREEHEAP_DEFINE_FLAGS4(flags_name, flags0, flags1, flags2, flags3) \
+	const ThreeHeap::Flags ThreeHeap::flags_name{ThreeHeap::Flags::flags0 | ThreeHeap::Flags::flags1 | ThreeHeap::Flags::flags2 | ThreeHeap::Flags::flags3}
+
+const ThreeHeap::Flags ThreeHeap::zero{0};
+
+THREEHEAP_DEFINE_FLAGS2(new_scalar, flag_from_new, flag_new_scalar);
+THREEHEAP_DEFINE_FLAGS2(new_array, flag_from_new, flag_new_array);
 THREEHEAP_DEFINE_FLAGS1(malloc, flag_from_malloc);
 THREEHEAP_DEFINE_FLAGS2(malloc_calloc, flag_from_malloc, flag_malloc_calloc);
 THREEHEAP_DEFINE_FLAGS2(malloc_aligned, flag_from_malloc, flag_malloc_aligned);
 THREEHEAP_DEFINE_FLAGS2(malloc_aligned_calloc, flag_from_malloc, flag_malloc_calloc);
 THREEHEAP_DEFINE_FLAGS2(malloc_aligned_valloc, flag_from_malloc, flag_malloc_valloc);
-THREEHEAP_DEFINE_FLAGS2(new_scalar, flag_from_new, flag_new_scalar);
-THREEHEAP_DEFINE_FLAGS2(new_array, flag_from_new, flag_new_array);
+
+THREEHEAP_DEFINE_FLAGS4(free_check, flag_from_new, flag_new_scalar, flag_new_array, flag_from_malloc);
 
 THREEHEAP_DEFINE_FLAGS1(validate_pre_guardband, flag_validate_pre_guardband);
 THREEHEAP_DEFINE_FLAGS1(validate_post_guardband, flag_validate_post_guardband);
@@ -35,84 +81,226 @@ THREEHEAP_DEFINE_FLAGS2(fill_guardbands, flag_fill_pre_guardband, flag_fill_post
 THREEHEAP_DEFINE_FLAGS1(fill_free_patterns, flag_fill_free_pattern);
 THREEHEAP_DEFINE_FLAGS3(fill_everything, flag_fill_pre_guardband, flag_fill_post_guardband, flag_fill_free_pattern);
 
-#endif
+THREEHEAP_DEFINE_FLAGS1(report_allocation, flag_report_allocation);
+THREEHEAP_DEFINE_FLAGS2(report_allocation_operation, flag_report_allocation, flag_report_operation);
+THREEHEAP_DEFINE_FLAGS2(report_free_operation, flag_report_free, flag_report_operation);
 
-#define assert(a) assertHandler(__FILE__, __LINE__, #a, a)
+// ======================================================================
 
-void * ThreeHeap::DefaultInterface::page_allocator(int64_t size) {
-	return ::malloc(size);
-}
-
-void ThreeHeap::DefaultInterface::report(const void * ptr, int64_t size, int alignment, Flags flags) {
-}
-
-void ThreeHeap::DefaultInterface::heap_error(HeapError & heap_error) {
-	printf("abort\n");
-	abort();
-}
-
-ThreeHeap::~ThreeHeap()
+namespace
 {
+	constexpr static size_t Alignment = 64;
+	constexpr static size_t AllocationPad = Alignment;
+	constexpr static size_t HeaderSize = Alignment;
+	constexpr static size_t SplitSize = Alignment * 2;
+
+	// Alignment needs to be a power of 2
+	static_assert((Alignment & (Alignment-1)) == 0);
+
+	enum class BlockStatus : int16_t
+	{
+		Unknown,
+		Free,
+		Allocated,
+		Sentinel
+	};
+
+	inline ThreeHeap::Flags operator|(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+	{
+		return ThreeHeap::Flags{lhs.flags | rhs.flags};
+	}
+
+	inline ThreeHeap::Flags operator&(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+	{
+		return ThreeHeap::Flags{lhs.flags & rhs.flags};
+	}
+
+	inline bool operator==(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+	{
+		return lhs.flags == rhs.flags;
+	}
+
+	inline bool operator!=(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+	{
+		return lhs.flags != rhs.flags;
+	}
+
+	const char *GetAllocFlags(ThreeHeap::Flags flags)
+	{
+		flags = flags & ThreeHeap::free_check;
+		if (flags == ThreeHeap::malloc) {
+			return "malloc";
+		}
+		if (flags == ThreeHeap::new_scalar) {
+			return "new";
+		}
+		if (flags == ThreeHeap::new_array) {
+			return "new[]";
+		}
+		return "invalid";
+	}
+
+	const char *GetFreeFlags(ThreeHeap::Flags flags)
+	{
+		flags = flags & ThreeHeap::free_check;
+		if (flags == ThreeHeap::malloc) {
+			return "free";
+		}
+		if (flags == ThreeHeap::new_scalar) {
+			return "delete";
+		}
+		if (flags == ThreeHeap::new_array) {
+			return "delete[]";
+		}
+		return "invalid";
+	}
 }
 
-// Reallocate only supports malloc, no alignment, valloc, clearing allowed on these blocks
-void * ThreeHeap::reallocate(void * memory, int64_t size)
-{
-	(void)memory;
-	(void)size;
-	return nullptr;
-}
+// ======================================================================
 
-// Change the ownership of the memory to this caller
-void* ThreeHeap::own(void *memory)
+struct ThreeHeap::SystemAllocation
 {
-	(void)memory;
-	return memory;
-}
+	SentinelBlock * start = nullptr;
+	SentinelBlock * end = nullptr;
+	SystemAllocation * next = nullptr;
+};
 
 struct ThreeHeap::Block
 {
 	static constexpr uint32_t Marker = ('3' << 24) | ('H' << 16) | ('P' << 8) | ('B' << 0);
 	/* 4 */ uint32_t marker = Marker;
 	/* 2 */ BlockStatus status = BlockStatus::Unknown;
-	/* 2 */ mutable int16_t verification_stamp = 0;
+	/* 2 */ int16_t padding = 0;
 	/* 8 */ int64_t size = 0;
 
 	// doubly linked list in memory order for block coalescing
-	/* 8 */ Block* previous = nullptr;
-	/* 8 */ Block* next = nullptr;
+	/* 8 */ Block * previous = nullptr;
+	/* 8 */ Block * next = nullptr;
 	/* 4 */ // BlockFlags flags;
 };
 
 struct ThreeHeap::FreeBlock : public ThreeHeap::Block
 {
 	// ternary search free of free nodes
-	/* 8 */ FreeBlock* less = nullptr;
-	/* 8 */ FreeBlock* equal = nullptr;
-	/* 8 */ FreeBlock* greater = nullptr;
+	/* 8 */ FreeBlock * less = nullptr;
+	/* 8 */ FreeBlock * equal = nullptr;
+	/* 8 */ FreeBlock * greater = nullptr;
 
 	// parent for fast removal from the tree
-	/* 8 */ FreeBlock* parent = nullptr;
+	/* 8 */ FreeBlock * parent = nullptr;
 };
 
 struct ThreeHeap::AllocatedBlock : public ThreeHeap::Block
 {
 	/* 8 */ int64_t allocation_size = 0;
+	/* 4 */ Flags flags;
 };
 
 struct ThreeHeap::SentinelBlock : public ThreeHeap::Block
 {
 };
 
-void ThreeHeap::assertHandler(const char * const file, int line, const char * const text, const bool everything_is_okay) const {
-	static_assert(sizeof(Block) <= HeaderSize);
-	static_assert(sizeof(FreeBlock) <= HeaderSize);
-	static_assert(sizeof(AllocatedBlock) <= HeaderSize);
-	if (!everything_is_okay) {
-		printf("%s:%d\nassert failed: %s\n", file, line, text);
-		HeapError error;
-		external_interface.heap_error(error);
+// ======================================================================
+
+void * ThreeHeap::DefaultInterface::system_allocator(int64_t const size)
+{
+	// @TODO sbrk this up!
+	return ::malloc(size);
+}
+
+void ThreeHeap::DefaultInterface::report(void const * const ptr, int64_t const size, int const alignment, Flags const flags)
+{
+#if USE_REPORT
+	if (flags.isAllocate())
+	{
+		printf("alloc(%d @ %d) %p %08x\n", (int)size, alignment, ptr, flags.flags);
 	}
+	else
+	{
+		assert(flags.isFree());
+		printf("free(%p) %d %08x\n", ptr, (int)size, flags.flags);
+	}
+#endif
+}
+
+void ThreeHeap::DefaultInterface::error(ErrorInfo const & error)
+{
+	printf("ERROR!\n");
+	switch (error.type)
+	{
+		case ErrorInfo::Type::Assert:
+			printf("  %s:%d\n", error.file, error.line);
+			printf("  assert failed: %s\n", error.assert);
+			break;
+
+		case ErrorInfo::Type::MismatchedFree:
+			printf("  mismatched allocation/free %p %d\n", error.memory, (int)error.size);
+			printf("  alloc was %s, but free is %s\n", GetAllocFlags(error.allocation_flags), GetFreeFlags(error.free_flags));
+			break;
+
+		default:
+			printf("  unknown error %d\n", static_cast<int>(error.type));
+			break;
+	};
+
+	terminate();
+}
+
+void ThreeHeap::DefaultInterface::terminate()
+{
+	abort();
+}
+
+// ======================================================================
+
+ThreeHeap::ThreeHeap(ExternalInterface& ei, Flags flags)
+: external_interface(ei), configure_flags(flags)
+{
+	static_assert(sizeof(ThreeHeap::Block) <= HeaderSize);
+	static_assert(sizeof(ThreeHeap::FreeBlock) <= HeaderSize);
+	static_assert(sizeof(ThreeHeap::AllocatedBlock) <= HeaderSize);
+}
+
+void ThreeHeap::allocateFromSystem()
+{
+	int64_t constexpr memory_size = 16 * 1024 * 1024;
+	void * memory = ::malloc(memory_size);
+	intptr_t const m = reinterpret_cast<intptr_t>(memory);
+
+	SystemAllocation * const allocation = new(reinterpret_cast<void *>(m)) SystemAllocation();
+
+	SentinelBlock * const start_sentinel = new(reinterpret_cast<void *>(m + HeaderSize)) SentinelBlock();
+	start_sentinel->status = BlockStatus::Sentinel;
+	start_sentinel->size = HeaderSize;
+
+	SentinelBlock * const end_sentinel = new(reinterpret_cast<void *>(m + memory_size - HeaderSize)) SentinelBlock();
+	end_sentinel->status = BlockStatus::Sentinel;
+	end_sentinel->size = HeaderSize;
+
+	FreeBlock * const free_block = new(reinterpret_cast<void *>(m + HeaderSize + HeaderSize)) FreeBlock();
+	free_block->status = BlockStatus::Free;
+	free_block->size = memory_size - (3 * HeaderSize);
+
+	// Set up the initial state of the doubly linked memory blocks
+	// First the start sentinal, then free block, then the end sentinal
+	start_sentinel->next = free_block;
+	free_block->next = end_sentinel;
+	end_sentinel->previous = free_block;
+	free_block->previous = start_sentinel;
+
+	allocation->start = start_sentinel;
+	allocation->end = end_sentinel;
+	if (last_system_allocation)
+		last_system_allocation->next = allocation;
+	else
+		first_system_allocation = allocation;
+	last_system_allocation = allocation;
+
+	addToFreeList(free_block);
+}
+
+ThreeHeap::~ThreeHeap()
+{
 }
 
 void ThreeHeap::addToFreeList(FreeBlock * const block)
@@ -124,7 +312,8 @@ void ThreeHeap::addToFreeList(FreeBlock * const block)
 
 	// Handle inserting into an empty tree
 	FreeBlock * node = free_list;
-	if (!node) {
+	if (!node)
+	{
 		free_list = block;
 		return;
 	}
@@ -225,14 +414,16 @@ void ThreeHeap::removeFromFreeList(FreeBlock * const block)
 		*pparent = block_equal;
 
 		// Move the less child up to the replacement
-		if (block_less) {
+		if (block_less)
+		{
 			block->less = nullptr;
 			block_equal->less = block_less;
 			block_less->parent = block_equal;
 		}
 
 		// Move the greater child up to the replacement
-		if (block_greater) {
+		if (block_greater)
+		{
 			block->greater = nullptr;
 			block_equal->greater = block_greater;
 			block_greater->parent = block_equal;
@@ -334,10 +525,8 @@ ThreeHeap::FreeBlock * ThreeHeap::searchFreeList(const int64_t size)
 	return best_fit;
 }
 
-void * ThreeHeap::allocate(const int64_t size, const int alignment /* AllocationFlags flags */)
+void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const flags)
 {
-	// (void)flags;
-
 	// calculate the total size of the allocation block
 	const int64_t padding = (AllocationPad - (size & (AllocationPad - 1))) & (AllocationPad - 1);
 	const int64_t additional_alignment = (alignment > Alignment) ? alignment : 0;
@@ -358,10 +547,11 @@ void * ThreeHeap::allocate(const int64_t size, const int alignment /* Allocation
 	assert(free_block->equal == nullptr);
 	assert(free_block->greater == nullptr);
 	assert(free_block->parent == nullptr);
-	
-	AllocatedBlock* allocated_block = static_cast<AllocatedBlock *>(static_cast<Block *>(free_block));
+
+	AllocatedBlock * allocated_block = static_cast<AllocatedBlock *>(static_cast<Block *>(free_block));
 	allocated_block->status = BlockStatus::Allocated;
 	allocated_block->allocation_size = size;
+	allocated_block->flags = flags;
 	free_block = nullptr;
 
 	// Check if there's sufficient size left over to split this block
@@ -391,23 +581,45 @@ void * ThreeHeap::allocate(const int64_t size, const int alignment /* Allocation
 	}
 
 	// Return a pointer to the client memory
-	void * const result = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
+	void * const result = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
+
+	report(result, size, alignment, flags | report_allocation_operation);
 	return result;
 }
 
-void ThreeHeap::free(void * memory /*, AllocationFlags flags*/)
+void ThreeHeap::free(void * const memory, Flags const flags)
 {
-	//(void)flags;
+	if (!memory)
+		return;
 
-	Block * block = reinterpret_cast<Block *>(reinterpret_cast<intptr_t>(memory) - HeaderSize);
-	assert(block->marker == Block::Marker);
-	assert(block->previous->next == block);
-	assert(block->next->previous == block);
-	assert(block->status == BlockStatus::Allocated);
+	AllocatedBlock * allocated_block = reinterpret_cast<AllocatedBlock *>(reinterpret_cast<intptr_t>(memory) - HeaderSize);
+	assert(allocated_block->marker == Block::Marker);
+	assert(allocated_block->previous->next == allocated_block);
+	assert(allocated_block->next->previous == allocated_block);
+	assert(allocated_block->status == BlockStatus::Allocated);
+
+	Flags const free_check_allocation = allocated_block->flags & free_check;
+	Flags const free_check_free = flags & free_check;
+
+	// Make sure the allocation flags match the delete flags
+	if (free_check_allocation != free_check_free)
+	{
+		ErrorInfo info;
+		info.type = ErrorInfo::Type::MismatchedFree;
+		info.memory = memory;
+		info.size = allocated_block->allocation_size;
+		info.allocation_flags = allocated_block->flags;
+		info.free_flags = flags;
+		error(info);
+		return;
+	}
+
+	report(memory, allocated_block->allocation_size, 0, allocated_block->flags | report_free_operation);
 
 	// Convert this previously allocated block to a free block
-	FreeBlock * free_block = static_cast<FreeBlock *>(block);
-	free_block->verification_stamp = 0;
+	FreeBlock * free_block = static_cast<FreeBlock *>(static_cast<Block *>(allocated_block));
+	allocated_block = nullptr;
+	free_block->padding = 0;
 	free_block->status = BlockStatus::Unknown;
 	free_block->less = nullptr;
 	free_block->equal = nullptr;
@@ -428,7 +640,7 @@ void ThreeHeap::free(void * memory /*, AllocationFlags flags*/)
 		assert(free_next->parent == nullptr);
 
 		// Collapse it into the current block
-		Block* const next_next = next->next;
+		Block * const next_next = next->next;
 		free_block->size += next->size;
 		free_block->next = next_next;
 		next_next->previous = free_block;
@@ -436,7 +648,7 @@ void ThreeHeap::free(void * memory /*, AllocationFlags flags*/)
 		// Destroy the node we are collapsing into this node
 		next->marker = 0;
 		next->size = 0;
-		next->verification_stamp = 0;
+		next->padding = 0;
 		next->previous = nullptr;
 		next->next = nullptr;
 
@@ -466,7 +678,7 @@ void ThreeHeap::free(void * memory /*, AllocationFlags flags*/)
 		// Destroy the current free block that was collapsed into the previous
 		free_block->marker = 0;
 		free_block->size = 0;
-		free_block->verification_stamp = 0;
+		free_block->padding = 0;
 		free_block->previous = nullptr;
 		free_block->next = nullptr;
 
@@ -474,14 +686,16 @@ void ThreeHeap::free(void * memory /*, AllocationFlags flags*/)
 		free_block = free_previous;
 	}
 
-
 	free_block->status = BlockStatus::Free;
 	addToFreeList(free_block);
 }
 
-int64_t ThreeHeap::getAllocationSize(void * memory) const
+int64_t ThreeHeap::getAllocationSize(void * const memory) const
 {
-	Block const * const block = reinterpret_cast<Block *>(reinterpret_cast<intptr_t>(memory) - HeaderSize);
+	if (!memory)
+		return 0;
+
+	Block const * const block = reinterpret_cast<Block const *>(reinterpret_cast<intptr_t>(memory) - HeaderSize);
 	assert(block->marker == Block::Marker);
 	assert(block->status == BlockStatus::Allocated);
 
@@ -489,52 +703,9 @@ int64_t ThreeHeap::getAllocationSize(void * memory) const
 	return allocated_block->allocation_size;
 }
 
-ThreeHeap::ThreeHeap(ExternalInterface& ei, Flags flags)
-: external_interface(ei), configure_flags(flags)
-{
-}
-
-void ThreeHeap::allocateFromSystem()
-{
-	int64_t constexpr memory_size = 64 * 4 * 1024;
-	void * memory = ::malloc(memory_size);
-	intptr_t const m = reinterpret_cast<intptr_t>(memory);
-
-	SystemAllocation * const allocation = new(reinterpret_cast<void*>(m)) SystemAllocation();
-
-	SentinelBlock* const start_sentinel = new(reinterpret_cast<void*>(m + HeaderSize)) SentinelBlock();
-	start_sentinel->status = BlockStatus::Sentinel;
-	start_sentinel->size = HeaderSize;
-
-	SentinelBlock* const end_sentinel = new(reinterpret_cast<void*>(m + memory_size - HeaderSize)) SentinelBlock();
-	end_sentinel->status = BlockStatus::Sentinel;
-	end_sentinel->size = HeaderSize;
-
-	FreeBlock * const free_block = new(reinterpret_cast<void*>(m + HeaderSize + HeaderSize)) FreeBlock();
-	free_block->status = BlockStatus::Free;
-	free_block->size = memory_size - (3 * HeaderSize);
-
-	// Set up the initial state of the doubly linked memory blocks
-	// First the start sentinal, then free block, then the end sentinal
-	start_sentinel->next = free_block;
-	free_block->next = end_sentinel;
-	end_sentinel->previous = free_block;
-	free_block->previous = start_sentinel;
-
-	allocation->start = start_sentinel;
-	allocation->end = end_sentinel;
-	if (last_system_allocation)
-		last_system_allocation->next = allocation;
-	else
-		first_system_allocation = allocation;
-	last_system_allocation = allocation;
-
-	addToFreeList(free_block);
-}
-
 void ThreeHeap::verify(FreeBlock const * const parent, FreeBlock const * const node) const
 {
-	++free_tree;
+	++verifiy_number_of_free_blocks;
 
 	assert(node->marker == Block::Marker);
 	assert(node->status == BlockStatus::Free);
@@ -560,13 +731,13 @@ void ThreeHeap::verify(FreeBlock const * const parent, FreeBlock const * const n
 		verify(node, equal);
 	}
 	assert(node->parent == parent);
-
-	node->verification_stamp = verification_stamp;
 }
 
 void ThreeHeap::verify() const
 {
+#if USE_ASSERT
 	// Check all the system allocation doubly linked list
+	int free_linear = 0;
 	for (SystemAllocation * allocation = first_system_allocation; allocation; allocation = allocation->next)
 	{
 		// Linearly scan all the blocks in the system allocation
@@ -574,6 +745,9 @@ void ThreeHeap::verify() const
 		{
 			Block * previous = block->previous;
 			Block * next = block->next;
+
+			if (block->status == BlockStatus::Free)
+				++free_linear;
 
 			assert(block->marker == Block::Marker);
 			assert(block->status == BlockStatus::Unknown || block->status == BlockStatus::Sentinel || block->status == BlockStatus::Free || block->status == BlockStatus::Allocated);
@@ -587,19 +761,37 @@ void ThreeHeap::verify() const
 	// Verify all the free nodes can be found in the free list
 	if (free_list)
 	{
-		++verification_stamp;
-		free_tree = 0;
+		verifiy_number_of_free_blocks = 0;
 		verify(nullptr, free_list);
-		int free_linear = 0;
-		for (SystemAllocation * allocation = first_system_allocation; allocation; allocation = allocation->next)
-			for (Block * block = allocation->start->next; block != allocation->end; block = block->next)
-				if (block->status == BlockStatus::Free)
-				{
-					FreeBlock * const free_block = static_cast<FreeBlock *>(block);
-					assert(free_block->verification_stamp == verification_stamp);
-					++free_linear;
-				}
-
-		assert(free_tree == free_linear);
+		assert(verifiy_number_of_free_blocks == free_linear);
 	}
+#endif
+}
+
+void ThreeHeap::report_allocations() const
+{
+	// Check all the system allocation doubly linked list
+	for (SystemAllocation const * allocation = first_system_allocation; allocation; allocation = allocation->next)
+	{
+		// Linearly scan all the blocks in the system allocation
+		for (Block const * block = allocation->start->next; block != allocation->end; block = block->next)
+		{
+			if (block->status == BlockStatus::Allocated)
+			{
+				AllocatedBlock const * const allocated_block = static_cast<AllocatedBlock const *>(block);
+				void const * const mem = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
+				report(mem, allocated_block->allocation_size, 0, allocated_block->flags | report_allocation);
+			}
+		}
+	}
+}
+
+void * ThreeHeap::reallocate(void * const memory, int64_t const size)
+{
+	// @TODO size the block in situ if possible
+	int64_t const previous = getAllocationSize(memory);
+	int64_t const least = (previous < size) ? previous : size;
+	void * const result = allocate(size, 0, malloc);
+	memcpy(result, memory, least);
+	return result;
 }

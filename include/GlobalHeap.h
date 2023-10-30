@@ -5,7 +5,7 @@
 class HeapInterface : public ThreeHeap::DefaultInterface
 {
 public:
-	void report(const void * ptr, int64_t size, int alignment, const void * owner, ThreeHeap::Flags flags) override;
+	void report_operation(const void * memory, int64_t size, int alignment, const void * owner, ThreeHeap::Flags flags) override;
 	void terminate() override;
 
 	bool permissive = false;

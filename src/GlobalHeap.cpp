@@ -8,10 +8,11 @@
 HeapInterface heap_interface;
 ThreeHeap g_heap(heap_interface, ThreeHeap::zero);
 
-void HeapInterface::report(const void * ptr, int64_t size, int alignment, const void * const owner, ThreeHeap::Flags flags)
+void HeapInterface::report_operation(const void * ptr, int64_t size, int alignment, const void * const owner, ThreeHeap::Flags flags)
 {
-	if (report_operations || !flags.isOperation())
-		DefaultInterface::report(ptr, size, alignment, owner, flags);
+	if (!report_operations)
+		return;
+	DefaultInterface::report_operation(ptr, size, alignment, owner, flags);
 }
 
 void HeapInterface::terminate()

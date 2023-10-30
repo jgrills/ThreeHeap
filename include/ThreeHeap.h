@@ -30,7 +30,6 @@ public:
 
 		THREEHEAP_DEFINE_FLAG(flag_report_allocation,       0b0000'0000'0001'0000'0000, isAllocate);
 		THREEHEAP_DEFINE_FLAG(flag_report_free,             0b0000'0000'0010'0000'0000, isFree);
-		THREEHEAP_DEFINE_FLAG(flag_report_operation,        0b0000'0000'0100'0000'0000, isOperation);
 
 		THREEHEAP_DEFINE_FLAG(flag_validate_pre_guardband,  0b0000'0001'0000'0000'0000, validatePreGuardBand);
 		THREEHEAP_DEFINE_FLAG(flag_validate_post_guardband, 0b0000'0010'0000'0000'0000, validatePostGuardBand);
@@ -69,8 +68,7 @@ public:
 	THREEHEAP_DECLARE_FLAGS(fill_everything);
 
 	THREEHEAP_DECLARE_FLAGS(report_allocation);
-	THREEHEAP_DECLARE_FLAGS(report_allocation_operation);
-	THREEHEAP_DECLARE_FLAGS(report_free_operation);
+	THREEHEAP_DECLARE_FLAGS(report_free);
 
 	struct ErrorInfo
 	{
@@ -98,20 +96,22 @@ public:
 	};
 	struct ExternalInterface
 	{
-		virtual void * system_allocator(int64_t size) = 0;
-		virtual void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) = 0;
+		virtual void * system_allocator(int64_t & size) = 0;
+		virtual void report_operation(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) = 0;
+		virtual void report_allocations(const void * ptr, int64_t size, const void * owner, Flags flags) = 0;
 		virtual void error(ErrorInfo const & info) = 0;
 		virtual void terminate() = 0;
 	};
 	struct DefaultInterface : public ExternalInterface
 	{
-		void * system_allocator(int64_t size) override;
-		void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) override;
+		void * system_allocator(int64_t & size) override;
+		void report_operation(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) override;
+		void report_allocations(const void * ptr, int64_t size, const void * owner, Flags flags) override;
 		void error(ErrorInfo const & info) override;
 		void terminate() override;
 	};
 
-	ThreeHeap(ExternalInterface& external_interface, Flags enabled);
+	ThreeHeap(ExternalInterface & external_interface, Flags enabled);
 	~ThreeHeap();
 
 	// int getTotalNumberOfAllocations() const;
@@ -145,7 +145,7 @@ public:
 	void report_allocations() const;
 
 private:
-	ExternalInterface& external_interface;
+	ExternalInterface & external;
 	Flags configure_flags;
 
 private:
@@ -158,11 +158,7 @@ private:
 
 private:
 
-	void * system_allocator(int64_t size) const;
-	void report(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) const;
-	void error(ErrorInfo const & info) const;
-
-	void allocateFromSystem();
+	void allocateFromSystem(int64_t minimum_size);
 
 	void verify(FreeBlock const * parent, FreeBlock const * node) const;
 
@@ -184,22 +180,5 @@ private:
 	ThreeHeap(ThreeHeap &&) = delete;
 	ThreeHeap& operator=(ThreeHeap &&) = delete;
 };
-
-// ======================================================================
-
-inline void * ThreeHeap::system_allocator(int64_t const size) const
-{
-	return external_interface.system_allocator(size);
-}
-
-inline void ThreeHeap::report(void const * const ptr, int64_t const size, int const alignment, void const * const owner, Flags const flags) const
-{
-	external_interface.report(ptr, size, alignment, owner, flags);
-}
-
-inline void ThreeHeap::error(ErrorInfo const & info) const
-{
-	external_interface.error(info);
-}
 
 // ======================================================================

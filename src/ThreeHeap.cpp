@@ -10,39 +10,43 @@
 
 // CPP defines that control the code compilation for these features,
 // this should be kept private in this one translation unit
-#define USE_ALLOCATION_STACK_DEPTH       0
-#define USE_PRE_GUARD_BAND_VALIDATION    0
-#define USE_POST_GUARD_BAND_VALIDATION   0
-#define USE_INITIALIZE_PATTERN_FILL      0
-#define USE_FREE_PATTERN_FILL            0
-#define USE_FREE_PATTERN_VALIDATION      0
+#define USE_ASSERT                       1
+#define USE_REPORT_OPERATION             1
 
-#define USE_ASSERT                       0
-#define USE_REPORT                       0
+// #define USE_ALLOCATION_STACK_DEPTH       0
+// #define USE_PRE_GUARD_BAND_VALIDATION    0
+// #define USE_POST_GUARD_BAND_VALIDATION   0
+// #define USE_INITIALIZE_PATTERN_FILL      0
+// #define USE_FREE_PATTERN_FILL            0
+// #define USE_FREE_PATTERN_VALIDATION      0
 
 #if USE_ASSERT
-#define assert(a) \
-do \
-{ \
-	const bool result = (a); \
-	if (!result) \
-	{ \
-		ErrorInfo info; \
-		info.type = ErrorInfo::Type::Assert; \
-		info.assert = #a; \
-		info.file = __FILE__; \
-		info.line = __LINE__; \
-		error(info); \
-	} \
-} while (false)
+
+	#define assert(a) \
+		do \
+		{ \
+			const bool result = static_cast<bool>(a); \
+			if (!result) \
+			{ \
+				ErrorInfo info; \
+				info.type = ErrorInfo::Type::Assert; \
+				info.assert = #a; \
+				info.file = __FILE__; \
+				info.line = __LINE__; \
+				external.error(info); \
+			} \
+		} while (false)
+
 #else
-#define assert(a) static_cast<void>(0)
+
+	#define assert(a) static_cast<void>(0)
+
 #endif
 
-#if USE_REPORT
-#define REPORT(...) report(__VA_ARGS__)
+#if USE_REPORT_OPERATION
+	#define REPORT_OPERATION(...) external.report_operation(__VA_ARGS__)
 #else
-#define REPORT(...) static_cast<void>(0)
+	#define REPORT_OPERATION(...) static_cast<void>(0)
 #endif
 
 #define THREEHEAP_DEFINE_FLAGS1(flags_name, flags0) \
@@ -82,8 +86,7 @@ THREEHEAP_DEFINE_FLAGS1(fill_free_patterns, flag_fill_free_pattern);
 THREEHEAP_DEFINE_FLAGS3(fill_everything, flag_fill_pre_guardband, flag_fill_post_guardband, flag_fill_free_pattern);
 
 THREEHEAP_DEFINE_FLAGS1(report_allocation, flag_report_allocation);
-THREEHEAP_DEFINE_FLAGS2(report_allocation_operation, flag_report_allocation, flag_report_operation);
-THREEHEAP_DEFINE_FLAGS2(report_free_operation, flag_report_free, flag_report_operation);
+THREEHEAP_DEFINE_FLAGS1(report_free, flag_report_free);
 
 // ======================================================================
 
@@ -92,7 +95,7 @@ namespace
 	constexpr static size_t Alignment = 64;
 	constexpr static size_t AllocationPad = Alignment;
 	constexpr static size_t HeaderSize = Alignment;
-	constexpr static size_t SplitSize = Alignment * 2;
+	constexpr static size_t SplitSize = HeaderSize * 2;
 
 	// Alignment needs to be a power of 2
 	static_assert((Alignment & (Alignment-1)) == 0);
@@ -203,31 +206,36 @@ struct ThreeHeap::SentinelBlock : public ThreeHeap::Block
 
 // ======================================================================
 
-void * ThreeHeap::DefaultInterface::system_allocator(int64_t const size)
+void * ThreeHeap::DefaultInterface::system_allocator(int64_t & size)
 {
-	// @TODO sbrk this up!
+	int64_t initial = size;
+	if (size == 0)
+		size = 1;
+
+	const int64_t system_allocation_size = 16 * 1024 * 1024;
+	size = size + system_allocation_size - 1;
+	size = size - (size % system_allocation_size);
+	printf("system_allocator %d %d\n", (int)initial, (int) size);
+
+	// @TODO use sbrk
 	return ::malloc(size);
 }
 
-void ThreeHeap::DefaultInterface::report(void const * const ptr, int64_t const size, int const alignment, void const * const owner, Flags const flags)
+void ThreeHeap::DefaultInterface::report_operation(void const * const memory, int64_t const size, int const alignment, void const * const owner, Flags const flags)
 {
-#if USE_REPORT
 	if (flags.isAllocate())
 	{
-		printf("op=alloc result=%p size=%d align=%d owner=%p flags=%x\n", ptr, (int)size, alignment, owner, flags.flags);
+		printf("op=alloc result=%p size=%d align=%d owner=%p flags=%x\n", memory, (int)size, alignment, owner, flags.flags);
 	}
 	else
 	{
-		assert(flags.isFree());
-		printf("op=free ptr=%p size=%d owner=%p flags=%x\n", ptr, (int)size, owner, flags.flags);
+		printf("op=free memory=%p size=%d owner=%p flags=%x\n", memory, (int)size, owner, flags.flags);
 	}
-#else
-	(void)ptr;
-	(void)size;
-	(void)alignment;
-	(void)owner;
-	(void)flags;
-#endif
+}
+
+void ThreeHeap::DefaultInterface::report_allocations(void const * const memory, int64_t const size, void const * const owner, Flags const flags)
+{
+	printf("allocation memory=%p size=%d owner=%p flags=%x\n", memory, (int)size, owner, flags.flags);
 }
 
 void ThreeHeap::DefaultInterface::error(ErrorInfo const & error)
@@ -260,18 +268,20 @@ void ThreeHeap::DefaultInterface::terminate()
 
 // ======================================================================
 
-ThreeHeap::ThreeHeap(ExternalInterface& ei, Flags flags)
-: external_interface(ei), configure_flags(flags)
+ThreeHeap::ThreeHeap(ExternalInterface& external_interface, Flags flags)
+: external(external_interface), configure_flags(flags)
 {
 	static_assert(sizeof(ThreeHeap::Block) <= HeaderSize);
 	static_assert(sizeof(ThreeHeap::FreeBlock) <= HeaderSize);
 	static_assert(sizeof(ThreeHeap::AllocatedBlock) <= HeaderSize);
 }
 
-void ThreeHeap::allocateFromSystem()
+void ThreeHeap::allocateFromSystem(int64_t const minimum_size)
 {
-	int64_t constexpr memory_size = 16 * 1024 * 1024;
-	void * memory = ::malloc(memory_size);
+	// Ask the system for memory, it may resize the allocation
+	// Add space in the allocation for the sentinel nodes
+	int64_t allocation_size = HeaderSize + minimum_size + HeaderSize;
+	void * const memory = external.system_allocator(allocation_size);
 	intptr_t const m = reinterpret_cast<intptr_t>(memory);
 
 	SystemAllocation * const allocation = new(reinterpret_cast<void *>(m)) SystemAllocation();
@@ -280,13 +290,13 @@ void ThreeHeap::allocateFromSystem()
 	start_sentinel->status = BlockStatus::Sentinel;
 	start_sentinel->size = HeaderSize;
 
-	SentinelBlock * const end_sentinel = new(reinterpret_cast<void *>(m + memory_size - HeaderSize)) SentinelBlock();
+	SentinelBlock * const end_sentinel = new(reinterpret_cast<void *>(m + allocation_size - HeaderSize)) SentinelBlock();
 	end_sentinel->status = BlockStatus::Sentinel;
 	end_sentinel->size = HeaderSize;
 
 	FreeBlock * const free_block = new(reinterpret_cast<void *>(m + HeaderSize + HeaderSize)) FreeBlock();
 	free_block->status = BlockStatus::Free;
-	free_block->size = memory_size - (3 * HeaderSize);
+	free_block->size = allocation_size - (3 * HeaderSize);
 
 	// Set up the initial state of the doubly linked memory blocks
 	// First the start sentinal, then free block, then the end sentinal
@@ -544,7 +554,7 @@ void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const 
 	FreeBlock * free_block = searchFreeList(block_size);
 	if (!free_block)
 	{
-		allocateFromSystem();
+		allocateFromSystem(block_size);
 		free_block = searchFreeList(block_size);
 		assert(free_block);
 	}
@@ -591,7 +601,7 @@ void * ThreeHeap::allocate(int64_t const size, int const alignment, Flags const 
 	// Return a pointer to the client memory
 	void * const result = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
 
-	report(result, size, alignment, owner, flags | report_allocation_operation);
+	REPORT_OPERATION(result, size, alignment, owner, flags | report_allocation);
 	return result;
 }
 
@@ -618,14 +628,16 @@ void ThreeHeap::free(void * const memory, Flags const flags)
 		info.size = allocated_block->allocation_size;
 		info.allocation_flags = allocated_block->flags;
 		info.free_flags = flags;
-		error(info);
+		external.error(info);
 		return;
 	}
 
-	report(memory, allocated_block->allocation_size, 0, allocated_block->owner, allocated_block->flags | report_free_operation);
+	REPORT_OPERATION(memory, allocated_block->allocation_size, 0, allocated_block->owner, allocated_block->flags | report_free);
 
 	// Convert this previously allocated block to a free block
 	FreeBlock * free_block = static_cast<FreeBlock *>(static_cast<Block *>(allocated_block));
+	allocated_block->allocation_size = 0;
+	allocated_block->owner = nullptr;
 	allocated_block = nullptr;
 	free_block->padding = 0;
 	free_block->status = BlockStatus::Unknown;
@@ -788,7 +800,7 @@ void ThreeHeap::report_allocations() const
 			{
 				AllocatedBlock const * const allocated_block = static_cast<AllocatedBlock const *>(block);
 				void const * const mem = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
-				report(mem, allocated_block->allocation_size, 0, allocated_block->owner, allocated_block->flags | report_allocation);
+				external.report_allocations(mem, allocated_block->allocation_size, allocated_block->owner, allocated_block->flags);
 			}
 		}
 	}

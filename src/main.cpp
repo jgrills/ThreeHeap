@@ -11,7 +11,7 @@
 #define USE_THREEHEAP 1
 
 int constexpr number_of_allocations = 64 * 1024;
-void* pointer[number_of_allocations];
+void * pointer[number_of_allocations];
 std::vector<int> full;
 std::vector<int> empty;
 

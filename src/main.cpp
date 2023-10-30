@@ -10,7 +10,7 @@
 
 #define USE_THREEHEAP 1
 
-int constexpr number_of_allocations = 64;
+int constexpr number_of_allocations = 64 * 1024;
 void* pointer[number_of_allocations];
 std::vector<int> full;
 std::vector<int> empty;
@@ -32,12 +32,12 @@ int main()
 
 	constexpr bool verify = false;
 
-	int constexpr loop_count = 100'000'000;
+	int constexpr loop_count = 10'000'000;
 	for (int loops = 0; loops < loop_count; ++loops)
 	{
 		assert(full.size() + empty.size() == number_of_allocations);
 
-		int operation = rand() % number_of_allocations;
+		int const operation = rand() % number_of_allocations;
 		if (operation <= empty.size())
 		{
 			if (empty.size())
@@ -48,7 +48,7 @@ int main()
 #if USE_THREEHEAP == 1
 				void * result = operator new(size);
 #else
-				void * result = malloc(size);
+				void * const result = malloc(size);
 #endif
 				pointer[slot] = result;
 				full.push_back(slot);
@@ -95,9 +95,9 @@ int main()
 	g_heap.free(new int[10], ThreeHeap::malloc);
 	delete static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
 	delete[] static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
-#endif
 
 	// Print memory leaks
 	printf("memory leaks:\n");
 	g_heap.report_allocations();
+#endif
 }

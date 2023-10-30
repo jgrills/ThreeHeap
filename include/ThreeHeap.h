@@ -114,13 +114,19 @@ public:
 	ThreeHeap(ExternalInterface & external_interface, Flags enabled);
 	~ThreeHeap();
 
-	// int getTotalNumberOfAllocations() const;
-	// int getCurrentNumberOfAllocations() const;
-	// int getMaximumNumberOfAllocations() const;
+	int getTotalNumberOfFrees() const;
+	int getTotalNumberOfAllocations() const;
+	int getCurrentNumberOfAllocations() const;
+	int getMaximumNumberOfAllocations() const;
 
-	// int64_t getTotalNumberOfBytesAllocated() const;
-	// int64_t getCurrentNumberOfBytesAllocated() const;
-	// int64_t getMaximumNumberOfBytesAllocated() const;
+	int64_t getTotalNumberOfBytesAllocated() const;
+	int64_t getCurrentNumberOfBytesAllocated() const;
+	int64_t getMaximumNumberOfBytesAllocated() const;
+
+	int64_t getCurrentNumberOfBytesFree() const;
+	int64_t getTotalNumberOfBytesUsed() const;
+	int64_t getCurrentNumberOfBytesUsed() const;
+	int64_t getMaximumNumberOfBytesUsed() const;
 
 	// bool getConfigureFlag(Flags flag) const;
 	// void setConfigureFlag(Flags flag, bool enabled);
@@ -145,6 +151,7 @@ public:
 	void report_allocations() const;
 
 private:
+
 	ExternalInterface & external;
 	Flags configure_flags;
 
@@ -160,7 +167,7 @@ private:
 
 	void allocateFromSystem(int64_t minimum_size);
 
-	void verify(FreeBlock const * parent, FreeBlock const * node) const;
+	void verify(FreeBlock const * parent, FreeBlock const * node, int & number_of_free_blocks) const;
 
 	void removeFromFreeList(FreeBlock * block);
 	void addToFreeList(FreeBlock * block);
@@ -171,7 +178,20 @@ private:
 	FreeBlock * free_list = nullptr;
 	SystemAllocation * first_system_allocation = nullptr;
 	SystemAllocation * last_system_allocation = nullptr;
-	mutable int verifiy_number_of_free_blocks = 0;
+
+	int total_number_of_allocations = 0;
+	int total_number_of_frees = 0;
+	int current_number_of_allocations = 0;
+	int maximum_number_of_allocations = 0;
+
+	int total_bytes_allocated = 0;
+	int current_bytes_allocated = 0;
+	int maximum_bytes_allocated = 0;
+	int current_bytes_free = 0;
+
+	int total_bytes_used = 0;
+	int current_bytes_used = 0;
+	int maximum_bytes_used = 0;
 
 private:
 
@@ -182,3 +202,58 @@ private:
 };
 
 // ======================================================================
+
+inline int ThreeHeap::getTotalNumberOfFrees() const
+{
+	return total_number_of_frees;
+}
+
+inline int ThreeHeap::getTotalNumberOfAllocations() const
+{
+	return total_number_of_allocations;
+}
+
+inline int ThreeHeap::getCurrentNumberOfAllocations() const
+{
+	return current_number_of_allocations;
+}
+
+inline int ThreeHeap::getMaximumNumberOfAllocations() const
+{
+	return maximum_number_of_allocations;
+}
+
+inline int64_t ThreeHeap::getTotalNumberOfBytesAllocated() const
+{
+	return total_bytes_allocated;
+}
+
+inline int64_t ThreeHeap::getCurrentNumberOfBytesAllocated() const
+{
+	return current_bytes_allocated;
+}
+
+inline int64_t ThreeHeap::getCurrentNumberOfBytesFree() const
+{
+	return current_bytes_free;
+}
+
+inline int64_t ThreeHeap::getMaximumNumberOfBytesAllocated() const
+{
+	return maximum_bytes_allocated;
+}
+
+inline int64_t ThreeHeap::getTotalNumberOfBytesUsed() const
+{
+	return total_bytes_used;
+}
+
+inline int64_t ThreeHeap::getCurrentNumberOfBytesUsed() const
+{
+	return current_bytes_used;
+}
+
+inline int64_t ThreeHeap::getMaximumNumberOfBytesUsed() const
+{
+	return maximum_bytes_used;
+}

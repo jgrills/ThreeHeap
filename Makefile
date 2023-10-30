@@ -1,9 +1,18 @@
-.PHONY: build
+.PHONY: build run time debug
 
 build: output/threeheap
 
+run: build
+	output/threeheap
+
+time: build
+	time output/threeheap
+
+debug: build
+	gdb output/threeheap
+
 OPTFLAGS := -g3 -O3
-CXXFLAGS := -Wall -Wno-sign-compare -std=c++17 -I include ${OPTFLAGS}
+CXXFLAGS := ${OPTFLAGS} -Wall -Wno-sign-compare -std=c++17 -I include
 
 output/ThreeHeap.o: src/ThreeHeap.cpp include/ThreeHeap.h Makefile
 	@mkdir -p output

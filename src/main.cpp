@@ -95,9 +95,9 @@ int main()
 	g_heap.free(new int[10], ThreeHeap::malloc);
 	delete static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
 	delete[] static_cast<char*>(g_heap.allocate(10, 0, ThreeHeap::malloc));
+#endif
 
 	// Print memory leaks
 	printf("memory leaks:\n");
 	g_heap.report_allocations();
-#endif
 }

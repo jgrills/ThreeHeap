@@ -1,5 +1,6 @@
 #include <ThreeHeap.h>
 
+#include <execinfo.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -829,6 +830,15 @@ void ThreeHeap::report_allocations() const
 				AllocatedBlock const * const allocated_block = static_cast<AllocatedBlock const *>(block);
 				void const * const mem = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(allocated_block) + HeaderSize);
 				external.report_allocations(mem, allocated_block->allocation_size, allocated_block->owner, allocated_block->flags);
+
+#if 0
+				// Look up the source location and report where the leak came from
+				// char ** backtrace_symbols (void *const *buffer, int size)
+				void * owner = const_cast<void*>(allocated_block->owner);
+				char * * result = nullptr;
+				result = backtrace_symbols(&owner, 1);
+				printf("  address %p %s\n", mem, result[0]);
+#endif
 			}
 	}
 }

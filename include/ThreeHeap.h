@@ -25,23 +25,25 @@ public:
 		THREEHEAP_DEFINE_FLAG(flag_new_array,               0b0000'0000'0000'0000'0100, isNewArray);
 		THREEHEAP_DEFINE_FLAG(flag_from_malloc,             0b0000'0000'0000'0001'0000, isMalloc);
 		THREEHEAP_DEFINE_FLAG(flag_malloc_aligned,          0b0000'0000'0000'0010'0000, isMallocAligned);
-		THREEHEAP_DEFINE_FLAG(flag_malloc_calloc,           0b0000'0000'0000'0100'0010, IsMallocCalloc);
-		THREEHEAP_DEFINE_FLAG(flag_malloc_valloc,           0b0000'0000'0000'1000'0010, isMallocValloc);
+		THREEHEAP_DEFINE_FLAG(flag_malloc_calloc,           0b0000'0000'0000'0100'0000, IsMallocCalloc);
+		THREEHEAP_DEFINE_FLAG(flag_malloc_valloc,           0b0000'0000'0000'1000'0000, isMallocValloc);
 
 		THREEHEAP_DEFINE_FLAG(flag_report_allocation,       0b0000'0000'0001'0000'0000, isAllocate);
 		THREEHEAP_DEFINE_FLAG(flag_report_free,             0b0000'0000'0010'0000'0000, isFree);
 
-		THREEHEAP_DEFINE_FLAG(flag_validate_pre_guardband,  0b0000'0001'0000'0000'0000, validatePreGuardBand);
-		THREEHEAP_DEFINE_FLAG(flag_validate_post_guardband, 0b0000'0010'0000'0000'0000, validatePostGuardBand);
-		THREEHEAP_DEFINE_FLAG(flag_validate_free_pattern,   0b0000'0100'0000'0000'0000, validateFreePattern);
+		THREEHEAP_DEFINE_FLAG(flag_guard_bands,             0b0001'0000'0000'0000'0000, useGuardBands);
+		THREEHEAP_DEFINE_FLAG(flag_fill_guard_bands,        0b0010'0000'0000'0000'0000, fillGuardBands);
+		THREEHEAP_DEFINE_FLAG(flag_fill_frees,              0b0100'0000'0000'0000'0000, fillFrees);
+		THREEHEAP_DEFINE_FLAG(flag_fill_allocations,        0b1000'0000'0000'0000'0000, fillAllocations);
 
-		THREEHEAP_DEFINE_FLAG(flag_fill_pre_guardband,      0b0001'0000'0000'0000'0000, fillPreGuardBand);
-		THREEHEAP_DEFINE_FLAG(flag_fill_post_guardband,     0b0010'0000'0000'0000'0000, fillPostGuardBand);
-		THREEHEAP_DEFINE_FLAG(flag_fill_free_pattern,       0b0100'0000'0000'0000'0000, fillFreePattern);
-		THREEHEAP_DEFINE_FLAG(flag_fill_allocate_pattern,   0b1000'0000'0000'0000'0000, fillAllocatePatten);
+		THREEHEAP_DEFINE_FLAG(flag_validate_guard_bands,    0b0000'0001'0000'0000'0000, validateGuardBands);
+		THREEHEAP_DEFINE_FLAG(flag_validate_free,           0b0000'0100'0000'0000'0000, validateFree);
 
 		uint32_t flags;
 	};
+
+	THREEHEAP_DECLARE_FLAGS(heap_fast);
+	THREEHEAP_DECLARE_FLAGS(heap_debug);
 
 	THREEHEAP_DECLARE_FLAGS(zero);
 
@@ -55,17 +57,13 @@ public:
 
 	THREEHEAP_DECLARE_FLAGS(free_check);
 
-	THREEHEAP_DECLARE_FLAGS(validate_pre_guardband);
-	THREEHEAP_DECLARE_FLAGS(validate_post_guardband);
-	THREEHEAP_DECLARE_FLAGS(validate_guardbands);
-	THREEHEAP_DECLARE_FLAGS(validate_free_patterns);
-	THREEHEAP_DECLARE_FLAGS(validate_everything);
+	THREEHEAP_DECLARE_FLAGS(guard_bands);
+	THREEHEAP_DECLARE_FLAGS(validate_guard_bands);
+	THREEHEAP_DECLARE_FLAGS(validate_free);
 
-	THREEHEAP_DECLARE_FLAGS(fill_pre_guardband);
-	THREEHEAP_DECLARE_FLAGS(fill_post_guardband);
-	THREEHEAP_DECLARE_FLAGS(fill_guardbands);
-	THREEHEAP_DECLARE_FLAGS(fill_free_patterns);
-	THREEHEAP_DECLARE_FLAGS(fill_everything);
+	THREEHEAP_DECLARE_FLAGS(fill_guard_bands);
+	THREEHEAP_DECLARE_FLAGS(fill_allocations);
+	THREEHEAP_DECLARE_FLAGS(fill_frees);
 
 	THREEHEAP_DECLARE_FLAGS(report_allocation);
 	THREEHEAP_DECLARE_FLAGS(report_free);
@@ -77,8 +75,8 @@ public:
 			Unknown,
 			Assert,
 			MismatchedFree,
-			//TODO GuardBandCorruption,
-			//TODO FreePatternCorruption,
+			GuardBandCorruption,
+			FreeCorruption
 		};
 
 		Type type = Type::Unknown;
@@ -89,6 +87,13 @@ public:
 		char const * file = nullptr;
 		int line = 0;
 
+		int pre_size = 0;
+		int post_size = 0;
+		bool pre_guard_band_corrupt[64] = {false};
+		bool post_guard_band_corrupt[128] = {false};
+
+		int free_corrupt_index = 0;
+
 		Flags allocation_flags = ThreeHeap::zero;
 		Flags free_flags = ThreeHeap::zero;
 
@@ -96,6 +101,7 @@ public:
 	};
 	struct ExternalInterface
 	{
+		virtual void tree_fixed_nodes(int64_t * & sizes, int & count ) = 0;
 		virtual void * system_allocator(int64_t & size) = 0;
 		virtual void report_operation(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) = 0;
 		virtual void report_allocations(const void * ptr, int64_t size, const void * owner, Flags flags) = 0;
@@ -104,6 +110,7 @@ public:
 	};
 	struct DefaultInterface : public ExternalInterface
 	{
+		void tree_fixed_nodes(int64_t * & sizes, int & count ) override;
 		void * system_allocator(int64_t & size) override;
 		void report_operation(const void * ptr, int64_t size, int alignment, const void * owner, Flags flags) override;
 		void report_allocations(const void * ptr, int64_t size, const void * owner, Flags flags) override;
@@ -132,7 +139,7 @@ public:
 	// void setConfigureFlag(Flags flag, bool enabled);
 
 	// Interface for C & C++ depending upon the AllocationFlags that get passed in
-	void * allocate(int64_t size, int alignment, Flags flags, void const * owner=nullptr);
+	void * allocate(int64_t size, int alignment, Flags flags, void * owner=nullptr);
 	void free(void * memory, Flags flags);
 
 	// Reallocate only supports malloc, no alignment, no valloc, no clearing allowed on these blocks
@@ -142,18 +149,13 @@ public:
 	int64_t getAllocationSize(void * memory) const;
 
 	// Change the ownership of the memory to this caller
-	// void * own(void * memory);
+	void * own(void * memory, void * owner);
 
-	// Verify the internal heap structures
-	void verify() const;
+	// Verify the internal heap structures (optionally guard bands and free fills too)
+	void verify(Flags flags = zero) const;
 
 	// Print outstanding memory allocations
 	void report_allocations() const;
-
-private:
-
-	ExternalInterface & external;
-	Flags configure_flags;
 
 private:
 
@@ -165,15 +167,22 @@ private:
 
 private:
 
+	static bool verifyGuardBand(void const * memory, int size, bool * corrupt);
+	void verifyGuardBands(AllocatedBlock const * block) const;
+	void verifyFree(void const * memory, int size) const;
+
 	void allocateFromSystem(int64_t minimum_size);
 
 	void verify(FreeBlock const * parent, FreeBlock const * node, int & number_of_free_blocks) const;
-
 	void removeFromFreeList(FreeBlock * block);
 	void addToFreeList(FreeBlock * block);
 	FreeBlock * searchFreeList(int64_t size);
 
 private:
+
+	ExternalInterface & external;
+	const Flags heap_flags;
+	const int guard_band_size = 0;
 
 	FreeBlock * free_list = nullptr;
 	SystemAllocation * first_system_allocation = nullptr;
@@ -193,6 +202,8 @@ private:
 	int current_bytes_used = 0;
 	int maximum_bytes_used = 0;
 
+	int fixed_nodes_count = 0;
+	int64_t * fixed_node_sizes = nullptr;
 private:
 
 	ThreeHeap(const ThreeHeap &) = delete;
@@ -256,4 +267,36 @@ inline int64_t ThreeHeap::getCurrentNumberOfBytesUsed() const
 inline int64_t ThreeHeap::getMaximumNumberOfBytesUsed() const
 {
 	return maximum_bytes_used;
+}
+
+inline ThreeHeap::Flags operator|(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+{
+	return ThreeHeap::Flags{lhs.flags | rhs.flags};
+}
+
+inline ThreeHeap::Flags& operator|=(ThreeHeap::Flags & lhs, ThreeHeap::Flags const & rhs)
+{
+	lhs.flags |= rhs.flags;
+	return lhs;
+}
+
+inline ThreeHeap::Flags operator&(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+{
+	return ThreeHeap::Flags{lhs.flags & rhs.flags};
+}
+
+inline ThreeHeap::Flags operator&=(ThreeHeap::Flags & lhs, ThreeHeap::Flags const & rhs)
+{
+	lhs.flags &= rhs.flags;
+	return lhs;
+}
+
+inline bool operator==(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+{
+	return lhs.flags == rhs.flags;
+}
+
+inline bool operator!=(ThreeHeap::Flags const & lhs, ThreeHeap::Flags const & rhs)
+{
+	return lhs.flags != rhs.flags;
 }

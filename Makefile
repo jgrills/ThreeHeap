@@ -11,7 +11,7 @@ time: build
 debug: build
 	gdb output/threeheap
 
-OPTFLAGS := -g3 -O3
+OPTFLAGS := -g3
 CXXFLAGS := ${OPTFLAGS} -Wall -Wno-sign-compare -std=c++17 -I include
 
 output/ThreeHeap.o: src/ThreeHeap.cpp include/ThreeHeap.h Makefile
